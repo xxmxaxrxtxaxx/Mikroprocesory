@@ -52,7 +52,6 @@ volatile uint8_t Empty_Tx = 0;
 volatile uint8_t Busy_Rx = 0;
 volatile uint8_t Empty_Rx = 0;
 
-
 char Bx[255];
 
 /* USER CODE END Includes */
@@ -62,11 +61,11 @@ UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
-uint16_t licznik=0;
-uint16_t okres=5;
-uint16_t temp_zadana=60;
-uint16_t petla_histerezy=3;
-uint16_t czy__ma_byc_wlaczony_nadmuch=0;
+uint16_t licznik = 0;
+uint16_t okres = 5;
+uint16_t temp_zadana = 60;
+uint16_t petla_histerezy = 3;
+uint16_t czy__ma_byc_wlaczony_nadmuch = 0;
 
 /* USER CODE END PV */
 
@@ -82,38 +81,57 @@ static void MX_USART2_UART_Init(void);
 
 /* USER CODE BEGIN 0 */
 
-void HAL_SYSTICK_Callback(){
+void HAL_SYSTICK_Callback() {
 	licznik++;
-	if(licznik>okres){
-		licznik=0;
+	if (licznik > okres) {
+		licznik = 0;
 		petlaGlowna();
 
-	}}
-int16_t odczyt_temp(){
-	int16_t temp=20;//zaimplentowac ds18 b20
+	}
+}
+int16_t odczyt_temp() {
+	int16_t temp = 20; //zaimplentowac ds18 b20
 	return temp;
 
 }
-void wlacz_dmuchawe(uint8_t czyWlaczona){
-	HAL_GPIO_WritePin(GPIOA,GPIO_PIN_5,czyWlaczona);
+void wlacz_dmuchawe(uint8_t czyWlaczona) {
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, czyWlaczona);
 }
 
-	void petlaGlowna(){
-		if(czy__ma_byc_wlaczony_nadmuch==1){
+void petlaGlowna() {
+	if (czy__ma_byc_wlaczony_nadmuch == 1) {
 
-			if(odczyt_temp()>(temp_zadana+petla_histerezy)){
-				wlacz_dmuchawe(0);
-			}
-			else if(odczyt_temp()<(temp_zadana-petla_histerezy)){
-				wlacz_dmuchawe(1);
-			}
-		}
-		else{
+		if (odczyt_temp() > (temp_zadana + petla_histerezy)) {
 			wlacz_dmuchawe(0);
+		} else if (odczyt_temp() < (temp_zadana - petla_histerezy)) {
+			wlacz_dmuchawe(1);
 		}
+	} else {
+		wlacz_dmuchawe(0);
 	}
+}
 
+void odbior_komunikatu(char* komunikat){
+	if(strcmp("AT+TEMA?", komunikat) == 0){
+		//odczyt pamiêci
+		//wys³anie wartoœci
+		odczyt_temp();
+	}
+	if(strcmp("AT+TEMZ=", komunikat) == 0){
+		//odczyt wartoœci z komunikatu
+		//zapis do pamiêci
+		//wys³anie ok
+	}
+	if(strcmp("AT+PEHI=", komunikat) == 0){
 
+	}
+	if(strcmp("AT+NAON=", komunikat) == 0){
+
+	}
+	if(strcmp("AT+NOFF=", komunikat) == 0){
+
+	}
+}
 
 void USART_fsend(char* format, ...) {
 
@@ -134,7 +152,7 @@ void USART_fsend(char* format, ...) {
 	__disable_irq();
 
 	if ((Empty_Tx == Busy_Tx)
-	&& (__HAL_UART_GET_FLAG(&huart2,UART_FLAG_TXE) == SET)) {
+			&& (__HAL_UART_GET_FLAG(&huart2,UART_FLAG_TXE) == SET)) {
 
 		Empty_Tx = idx;
 		uint8_t tmp = Buff_Tx[Busy_Tx];
@@ -270,29 +288,27 @@ int main(void) {
 
 		if ((len = USART_getline(Bx)) > 0) {
 
-			if (strcmp("ON", Bx)==0){
+			if (strcmp("ON", Bx) == 0) {
 
-				HAL_GPIO_WritePin(GPIOA,GPIO_PIN_5,GPIO_PIN_SET);
+				HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
 			}
 
-			else if((strcmp("OFF", Bx)==0)){
-				HAL_GPIO_WritePin(GPIOA,GPIO_PIN_5,GPIO_PIN_RESET);
+			else if ((strcmp("OFF", Bx) == 0)) {
+				HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
 			}
 
-			if (strcmp("1", Bx)==0){
+			if (strcmp("1", Bx) == 0) {
 
-				HAL_GPIO_WritePin(GPIOA,GPIO_PIN_5,GPIO_PIN_SET);
+				HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
 			}
 
-			else if((strcmp("0", Bx)==0)){
-							HAL_GPIO_WritePin(GPIOA,GPIO_PIN_5,GPIO_PIN_RESET);
-			}
-			else if((strcmp("BLINK", Bx)==0)){
+			else if ((strcmp("0", Bx) == 0)) {
+				HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
+			} else if ((strcmp("BLINK", Bx) == 0)) {
 				HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
 			}
 
-			}
-
+		}
 
 		/* USER CODE END WHILE */
 

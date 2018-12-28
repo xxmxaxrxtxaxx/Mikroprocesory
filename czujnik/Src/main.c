@@ -38,10 +38,13 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "stm32f4xx_hal.h"
-#include "stdarg.h"
-#include "string.h"
 
 /* USER CODE BEGIN Includes */
+#include "stdarg.h"
+#include "string.h"
+#include "tm_stm32_ds18b20.h"
+#include "tm_stm32_onewire.h"
+#include "tm_stm32_delay.h"
 volatile uint8_t BUFF_SIZE = 255;
 
 volatile char Buff_Rx[255];
@@ -62,10 +65,14 @@ UART_HandleTypeDef huart2;
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
 uint16_t licznik = 0;
-uint16_t okres = 5;
+uint16_t okres = 1000;
 uint16_t temp_zadana = 60;
 uint16_t petla_histerezy = 3;
 uint16_t czy__ma_byc_wlaczony_nadmuch = 0;
+
+TM_OneWire_t OW;
+uint8_t DS_ROM[8]; //Adres ROM czujnika
+float temp;
 
 /* USER CODE END PV */
 
@@ -89,16 +96,25 @@ void HAL_SYSTICK_Callback() {
 
 	}
 }
-int16_t odczyt_temp() {
-	int16_t temp = 20; //zaimplentowac ds18 b20
-	return temp;
+float odczyt_temp() {
+	if (TM_DS18B20_Is(DS_ROM)) {
+		if (TM_DS18B20_AllDone(&OW)) {
+			/* Read temperature from device */
+			if (TM_DS18B20_Read(&OW, DS_ROM, &temp)) {
+				TM_DS18B20_StartAll(&OW);
 
+			} else {
+				/* blad odczytu */
+			}
+		}
+	}
+	return temp;
 }
 void wlacz_dmuchawe(uint8_t czyWlaczona) {
 	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, czyWlaczona);
 }
 
-void petlaGlowna() {
+void petlaGlowna(void) {
 	if (czy__ma_byc_wlaczony_nadmuch == 1) {
 
 		if (odczyt_temp() > (temp_zadana + petla_histerezy)) {
@@ -111,26 +127,35 @@ void petlaGlowna() {
 	}
 }
 
-void odbior_komunikatu(char* komunikat){
-	if(strcmp("AT+TEMA?", komunikat) == 0){
-		//odczyt pamiêci
-		//wys³anie wartoœci
-		odczyt_temp();
+void odbior_komunikatu(char* komunikat) {
+	if (strcmp("AT+TEMA?", komunikat) == 0) {
+		char buf[25];
+		gcvt(odczyt_temp(), 3, buf); //zamiana float na string
+		USART_fsend("%s\r", buf);
+		return;
 	}
-	if(strcmp("AT+TEMZ=", komunikat) == 0){
-		//odczyt wartoœci z komunikatu
-		//zapis do pamiêci
-		//wys³anie ok
+	if (sscanf(komunikat, "AT+TEMZ=%u", &temp_zadana) > 0) {
+		USART_fsend("OK\r");
+		return;
 	}
-	if(strcmp("AT+PEHI=", komunikat) == 0){
 
+	if (sscanf(komunikat, "AT+PEHI=%d", &petla_histerezy) > 0) {
+		USART_fsend("OK\r");
+		return;
 	}
-	if(strcmp("AT+NAON=", komunikat) == 0){
 
+	if (strcmp("AT+NAON", komunikat) == 0) {
+		czy__ma_byc_wlaczony_nadmuch = 1;
+		USART_fsend("OK\r");
+		return;
 	}
-	if(strcmp("AT+NOFF=", komunikat) == 0){
+	if (strcmp("AT+NOFF", komunikat) == 0) {
+		czy__ma_byc_wlaczony_nadmuch = 0;
+		USART_fsend("OK\r");
+		return;
+	}
 
-	}
+	USART_fsend(komunikat);
 }
 
 void USART_fsend(char* format, ...) {
@@ -169,7 +194,6 @@ void USART_fsend(char* format, ...) {
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 	if (huart == &huart2) {
-//		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
 		Empty_Rx++;
 		if (Empty_Rx >= BUFF_SIZE)
 			Empty_Rx = 0;
@@ -217,29 +241,52 @@ uint8_t USART_getline(char * buff) {
 
 	static uint8_t bf[128];
 	static uint8_t idx = 0;
+	static uint8_t czy_ramka = 0;
+	static uint8_t czy_ostatnio_a = 0;
 
 	int i;
 	uint8_t ret;
 
 	while (czypustyRx()) {
+		uint8_t z = USART_getchar();
 
-		bf[idx] = USART_getchar();
+		if (czy_ramka == 1) {
 
-		if (bf[idx] == 59) {
-			bf[idx] = 0;
-			for (i = 0; i <= idx; i++) {
-				buff[i] = bf[i];
-			}
-			ret = idx;
-			idx = 0;
+			bf[idx] = z;
 
-			return ret;
+			if (bf[idx] == 13) {
+				bf[idx] = 0;
+				buff[0] = 65; //A
+				buff[1] = 84; //T
+				for (i = 0; i <= idx; i++) {
+					buff[i + 2] = bf[i];
+				}
 
-		} else {
-			idx++;
-			if (idx >= 128)
+				ret = idx;
 				idx = 0;
+				czy_ramka = 0;
+				czy_ostatnio_a = 0;
+				return ret;
 
+			} else {
+				idx++;
+				if (idx >= 128)
+					idx = 0;
+
+			}
+		}
+
+		if (czy_ostatnio_a == 1 && z == 84) { //84->T
+			if (czy_ramka == 1) {
+				idx = 0;
+			} else {
+				czy_ramka = 1;
+			}
+		}
+		if (z == 65) { //65->A
+			czy_ostatnio_a = 1;
+		} else {
+			czy_ostatnio_a = 0;
 		}
 
 	}
@@ -255,7 +302,7 @@ uint8_t USART_getline(char * buff) {
  */
 int main(void) {
 	/* USER CODE BEGIN 1 */
-
+	//TM_RCC_InitSystem();
 	/* USER CODE END 1 */
 
 	/* MCU Configuration----------------------------------------------------------*/
@@ -277,9 +324,26 @@ int main(void) {
 	MX_GPIO_Init();
 	MX_USART2_UART_Init();
 	/* USER CODE BEGIN 2 */
+
+	TM_OneWire_Init(&OW, GPIOA, GPIO_PIN_15);
+
+	if (TM_OneWire_First(&OW)) {
+		TM_OneWire_GetFullROM(&OW, DS_ROM);
+	} else {
+	}
+
 	HAL_UART_Receive_IT(&huart2, &Buff_Rx[0], 1);
 
+	if (TM_DS18B20_Is(DS_ROM)) {
+		TM_DS18B20_SetResolution(&OW, DS_ROM, TM_DS18B20_Resolution_12bits);
+		TM_DS18B20_StartAll(&OW);
+	}
 	int len = 0;
+	okres = 1000;
+	temp_zadana = 24;
+	petla_histerezy = 1;
+	czy__ma_byc_wlaczony_nadmuch = 1;
+
 	/* USER CODE END 2 */
 
 	/* Infinite loop */
@@ -287,36 +351,15 @@ int main(void) {
 	while (1) {
 
 		if ((len = USART_getline(Bx)) > 0) {
-
-			if (strcmp("ON", Bx) == 0) {
-
-				HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
-			}
-
-			else if ((strcmp("OFF", Bx) == 0)) {
-				HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
-			}
-
-			if (strcmp("1", Bx) == 0) {
-
-				HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
-			}
-
-			else if ((strcmp("0", Bx) == 0)) {
-				HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
-			} else if ((strcmp("BLINK", Bx) == 0)) {
-				HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
-			}
-
+			odbior_komunikatu(Bx);
 		}
-
-		/* USER CODE END WHILE */
-
-		/* USER CODE BEGIN 3 */
-
-		/* USER CODE END 3 */
-
 	}
+	/* USER CODE END WHILE */
+
+	/* USER CODE BEGIN 3 */
+
+	/* USER CODE END 3 */
+
 }
 
 /**
@@ -379,7 +422,7 @@ void SystemClock_Config(void) {
 static void MX_USART2_UART_Init(void) {
 
 	huart2.Instance = USART2;
-	huart2.Init.BaudRate = 9600;
+	huart2.Init.BaudRate = 115200;
 	huart2.Init.WordLength = UART_WORDLENGTH_8B;
 	huart2.Init.StopBits = UART_STOPBITS_1;
 	huart2.Init.Parity = UART_PARITY_NONE;

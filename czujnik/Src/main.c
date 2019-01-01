@@ -64,11 +64,11 @@ UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
-uint16_t licznik = 0;
-uint16_t okres = 1000;
-uint16_t temp_zadana = 60;
-uint16_t petla_histerezy = 3;
-uint16_t czy__ma_byc_wlaczony_nadmuch = 0;
+uint16_t licznik=1000;
+uint16_t okres;
+uint16_t temp_zadana;
+uint16_t petla_histerezy;
+uint16_t czy__ma_byc_wlaczony_nadmuch;
 
 TM_OneWire_t OW;
 uint8_t DS_ROM[8]; //Adres ROM czujnika
@@ -93,15 +93,14 @@ void HAL_SYSTICK_Callback() {
 	if (licznik > okres) {
 		licznik = 0;
 		petlaGlowna();
-
 	}
 }
 float odczyt_temp() {
-	if (TM_DS18B20_Is(DS_ROM)) {
-		if (TM_DS18B20_AllDone(&OW)) {
+	if (TM_DS18B20_Is(DS_ROM)) { //CZY POD ADRESEM DS_ROM JEST CZUJNIK DS18B20
+		if (TM_DS18B20_AllDone(&OW)) { //CZY WSZYSTKIE CZUJNIKI SKOÑCZY£Y POMIAR TEMPERATURY
 			/* Read temperature from device */
-			if (TM_DS18B20_Read(&OW, DS_ROM, &temp)) {
-				TM_DS18B20_StartAll(&OW);
+			if (TM_DS18B20_Read(&OW, DS_ROM, &temp)) { //ODZCYT TEMPERATURY DO ZMIENNEJ temp
+				TM_DS18B20_StartAll(&OW);//ROZPOCZNIJ POMIAR TEMPERATURY
 
 			} else {
 				/* blad odczytu */
@@ -116,7 +115,6 @@ void wlacz_dmuchawe(uint8_t czyWlaczona) {
 
 void petlaGlowna(void) {
 	if (czy__ma_byc_wlaczony_nadmuch == 1) {
-
 		if (odczyt_temp() > (temp_zadana + petla_histerezy)) {
 			wlacz_dmuchawe(0);
 		} else if (odczyt_temp() < (temp_zadana - petla_histerezy)) {
@@ -139,7 +137,7 @@ void odbior_komunikatu(char* komunikat) {
 		return;
 	}
 
-	if (sscanf(komunikat, "AT+PEHI=%d", &petla_histerezy) > 0) {
+	if (sscanf(komunikat, "AT+PEHI=%u", &petla_histerezy) > 0) {
 		USART_fsend("OK\r");
 		return;
 	}
@@ -155,7 +153,7 @@ void odbior_komunikatu(char* komunikat) {
 		return;
 	}
 
-	USART_fsend(komunikat);
+	USART_fsend("ERR\r");
 }
 
 void USART_fsend(char* format, ...) {
@@ -239,7 +237,7 @@ uint8_t USART_getchar() {
 
 uint8_t USART_getline(char * buff) {
 
-	static uint8_t bf[128];
+	static uint8_t ramka[128];
 	static uint8_t idx = 0;
 	static uint8_t czy_ramka = 0;
 	static uint8_t czy_ostatnio_a = 0;
@@ -252,14 +250,14 @@ uint8_t USART_getline(char * buff) {
 
 		if (czy_ramka == 1) {
 
-			bf[idx] = z;
+			ramka[idx] = z;
 
-			if (bf[idx] == 13) {
-				bf[idx] = 0;
+			if (ramka[idx] == 13) { //13 -> ENTER
+				ramka[idx] = 0; //0-> \0
 				buff[0] = 65; //A
 				buff[1] = 84; //T
 				for (i = 0; i <= idx; i++) {
-					buff[i + 2] = bf[i];
+					buff[i + 2] = ramka[i];
 				}
 
 				ret = idx;
@@ -277,7 +275,7 @@ uint8_t USART_getline(char * buff) {
 		}
 
 		if (czy_ostatnio_a == 1 && z == 84) { //84->T
-			if (czy_ramka == 1) {
+			if (czy_ramka == 1) { //ROZWIAZANIE PROBLEMU AT+GFGFG_AT+GFGFG
 				idx = 0;
 			} else {
 				czy_ramka = 1;
@@ -325,24 +323,26 @@ int main(void) {
 	MX_USART2_UART_Init();
 	/* USER CODE BEGIN 2 */
 
-	TM_OneWire_Init(&OW, GPIOA, GPIO_PIN_15);
+	TM_OneWire_Init(&OW, GPIOA, GPIO_PIN_15);//INITIALIZACJA BIBLIOTEKI ONE WIRE NA PINIE A15
 
 	if (TM_OneWire_First(&OW)) {
-		TM_OneWire_GetFullROM(&OW, DS_ROM);
+		TM_OneWire_GetFullROM(&OW, DS_ROM); //POBRANIE ADRESU CZUJNIKA
 	} else {
 	}
 
-	HAL_UART_Receive_IT(&huart2, &Buff_Rx[0], 1);
+	HAL_UART_Receive_IT(&huart2, &Buff_Rx[0], 1); //INITIALIZACJA PRZERWANIA UART
 
-	if (TM_DS18B20_Is(DS_ROM)) {
+	if (TM_DS18B20_Is(DS_ROM)) { //CZY TO JEST CZYJNIK DS18B20
 		TM_DS18B20_SetResolution(&OW, DS_ROM, TM_DS18B20_Resolution_12bits);
-		TM_DS18B20_StartAll(&OW);
+		TM_DS18B20_StartAll(&OW); //ROZPOCZNIJ POMIAR TEMPERATURY. ZAST¥PIC PRZEZ TM_DS18B20_Start DLA JEDNEGO CZUJNIKA
 	}
+	
 	int len = 0;
 	okres = 1000;
 	temp_zadana = 24;
 	petla_histerezy = 1;
 	czy__ma_byc_wlaczony_nadmuch = 1;
+	
 
 	/* USER CODE END 2 */
 
